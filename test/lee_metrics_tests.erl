@@ -42,8 +42,12 @@ model() ->
       ]),
   Cooked.
 
+sinks() ->
+  [ {lee_metrics_sink_log, undefined}
+  ].
+
 model_test() ->
-  {ok, _} = lee_metrics_sup:start_link(model(), []),
+  {ok, _} = lee_metrics_sup:start_link(model(), sinks()),
   ?assertMatch(
      {ok, _},
      lee_metrics:new_counter([ctr], [])),

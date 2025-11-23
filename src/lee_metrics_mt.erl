@@ -7,7 +7,7 @@
 -export([typeof/1]).
 
 %% behavior callbacks:
--export([names/1, metaparams/1, meta_validate_node/4]).
+-export([names/1, metaparams/1, meta_validate_node/4, post_patch/5]).
 
 %% internal exports:
 -export([]).
@@ -56,6 +56,14 @@ meta_validate_node(Type, _Model, _Key, #mnode{metatypes = MTs}) ->
              _ -> ["Only one metric type is allowed per Lee model node"]
            end,
   {Errors, []}.
+
+post_patch(_Type, _Model, _Data, _Mnode, PatchOp) ->
+  case PatchOp of
+    {rm, Key} ->
+      lee_metrics_collector:notify_metric_removed(Key);
+    {set, _, _} ->
+      ok
+  end.
 
 %%================================================================================
 %% Internal exports

@@ -2,11 +2,8 @@
  [{description, "A schema-based metrics library"},
   {vsn, "0.1.0"},
   {registered, []},
-  {applications,
-   [kernel,
-    stdlib,
-    lee
-   ]},
+  {applications, [kernel, stdlib, lee]},
+  {optinal_applications, [emqtt]},
   {env,[]},
   {modules, []},
 
