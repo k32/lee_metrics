@@ -3,7 +3,7 @@
 -behavior(supervisor).
 
 %% API:
--export([start_link/2, start_link_sinks/0, stop/0, attach_sink/1]).
+-export([start_link/2, start_link_sinks/1, stop/0, attach_sink/1]).
 
 %% behavior callbacks:
 -export([init/1]).
@@ -24,8 +24,17 @@ start_link(Model, Sinks) ->
 
 -spec stop() -> ok.
 stop() ->
-  exit(whereis(?SUP), shutdown),
-  ok.
+  case whereis(?SUP) of
+    Pid when is_pid(Pid) ->
+      MRef = monitor(process, Pid),
+      exit(whereis(?SUP), shutdown),
+      receive
+        {'DOWN', MRef, _, _, _} ->
+          ok
+      end;
+    undefined ->
+      ok
+  end.
 
 -spec attach_sink(supervisor:child_spec()) -> ok.
 attach_sink(ChildSpec) ->
@@ -49,16 +58,14 @@ attach_sink(ChildSpec) ->
 
 init({top, Model, Sinks}) ->
   Children = [ registry_spec(Model, [])
-             , sinks_spec()
-             , collector_spec(Sinks)
+             , sinks_spec(Sinks)
              ],
   SupFlags = #{ strategy      => rest_for_one
               , intensity     => 10
               , period        => 10
               },
   {ok, {SupFlags, Children}};
-init(sinks) ->
-  Children = [],
+init({sinks, Children}) ->
   SupFlags = #{ strategy      => one_for_one
               , intensity     => 10
               , period        => 10
@@ -74,10 +81,10 @@ registry_spec(Model, BaseData) ->
    , type        => worker
    }.
 
--spec sinks_spec() -> supervisor:child_spec().
-sinks_spec() ->
+-spec sinks_spec(_) -> supervisor:child_spec().
+sinks_spec(Sinks) ->
   #{ id          => sinks_sup
-   , start       => {?MODULE, start_link_sinks, []}
+   , start       => {?MODULE, start_link_sinks, [Sinks]}
    , shutdown    => infinity
    , restart     => permanent
    , type        => supervisor
@@ -96,9 +103,9 @@ collector_spec(Sinks) ->
 %% Internal exports
 %%================================================================================
 
--spec start_link_sinks() -> supervisor:startlink_ret().
-start_link_sinks() ->
-  supervisor:start_link({local, ?SINKS_SUP}, ?MODULE, sinks).
+-spec start_link_sinks(_) -> supervisor:startlink_ret().
+start_link_sinks(Sinks) ->
+  supervisor:start_link({local, ?SINKS_SUP}, ?MODULE, {sinks, Sinks}).
 
 %%================================================================================
 %% Internal functions

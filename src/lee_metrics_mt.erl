@@ -22,6 +22,10 @@
 %% Type declarations
 %%================================================================================
 
+-type gauge_aggregate() :: sum | avg.
+
+-reflect_type([gauge_aggregate/0]).
+
 %%================================================================================
 %% API functions
 %%================================================================================
@@ -29,6 +33,7 @@
 -spec typeof(#mnode{}) -> {ok, lee_metrics:type()} | {error, not_a_metric}.
 typeof(#mnode{metatypes = MTs}) ->
   Res = lists:search(fun(counter_metric) -> true;
+                        (gauge_metric) -> true;
                         (_) -> false
                      end,
                      MTs),
@@ -48,6 +53,11 @@ names(_) ->
 
 metaparams(counter_metric) ->
   [ {optional, unit, binary()}
+  | lee_doc:documented()];
+metaparams(gauge_metric) ->
+  [ {optional, unit, binary()}
+  , {optional, signed, boolean()}
+  , {optional, aggregate, gauge_aggregate()}
   | lee_doc:documented()].
 
 meta_validate_node(Type, _Model, _Key, #mnode{metatypes = MTs}) ->

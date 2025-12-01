@@ -169,7 +169,6 @@ handle_info(_Info, S) ->
   {noreply, S}.
 
 terminate(_Reason, _S = #s{metrics = {lee_tree, _, Data}}) ->
-  ?LOG_WARNING(ets:tab2list(Data)),
   persistent_term:erase(?MODEL),
   persistent_term:erase(?METRICS),
   ok.

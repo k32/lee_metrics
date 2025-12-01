@@ -1,13 +1,14 @@
 -module(lee_metrics).
 
 %% API:
--export([unregister_metric/2]).
+-export([collect/1, unregister_metric/2]).
 -export([new_counter/2, incr/2]).
+-export([new_gauge/2, gauge_set/2]).
 
 %% internal exports:
 -export([]).
 
--export_type([ type/0, metric_value/0, metric/0
+-export_type([ type/0, metric_value/0, metric_data/0, metric/0
              , options/0
              , counter/0
              ]).
@@ -20,14 +21,20 @@
 
 -type options() :: [{monitor, pid()} | async].
 
--type type() :: counter_metric.
+-type type() :: counter_metric | gauge_metric.
 
 -type metric_value() ::
-        non_neg_integer(). % counter_metric
+        non_neg_integer() % counter_metric
+      | integer()         % gauge
+      | float().          % gauge
+
+-type metric_data() :: [{lee:key(), metric_value()}].
 
 -opaque counter() :: counters:counters_ref().
 
--type metric() :: counter().
+-opaque gauge() :: atomics:atomic_ref().
+
+-type metric() :: counter() | gauge().
 
 %%================================================================================
 %% API functions
@@ -37,6 +44,21 @@
 unregister_metric(Key, Metric) ->
   lee_metrics_registry:unregister(Key, Metric).
 
+-spec collect(lee:model_key()) -> {ok, #mnode{}, metric_data()} | {error, _}.
+collect(MKey) ->
+  Model = lee_metrics_registry:model(),
+  Data = lee_metrics_registry:metrics(),
+  maybe
+    {ok, MNode} ?= lee_metrics_registry:get_meta(Model, MKey),
+    {ok, Type} ?= lee_metrics_mt:typeof(MNode),
+    case is_external(Type) of
+      false ->
+        Instances = lee:list(Model, Data, MKey),
+        Values = [{I, collect_instance(Type, Data, MNode, I)} || I <- Instances],
+        {ok, MNode, Values}
+    end
+  end.
+
 -spec new_counter(lee:key(), options()) -> {ok, counter()} | {error, _}.
 new_counter(Key, Options) ->
   register_metric(counter_metric, Key, Options).
@@ -44,6 +66,14 @@ new_counter(Key, Options) ->
 -spec incr(counter(), pos_integer()) -> ok.
 incr(Counter, Val) ->
   counters:add(Counter, 1, Val).
+
+-spec new_gauge(lee:key(), options()) -> {ok, gauge()} | {error, _}.
+new_gauge(Key, Options) ->
+  register_metric(gauge_metric, Key, Options).
+
+-spec gauge_set(gauge(), integer()) -> ok.
+gauge_set(Ref, Value) ->
+  atomics:put(Ref, 1, Value).
 
 %%================================================================================
 %% Internal exports
@@ -64,7 +94,10 @@ register_metric(Type, Key, Options) ->
 
 -spec create_metric(type(), #mnode{}) -> {ok, metric()} | {error, _}.
 create_metric(counter_metric, _) ->
-  {ok, counters:new(1, [])}.
+  {ok, counters:new(1, [])};
+create_metric(gauge_metric, #mnode{metaparams = MPs}) ->
+  Signed = maps:get(signed, MPs, false),
+  {ok, atomics:new(1, [{signed, Signed}])}.
 
 -spec get_meta(type(), lee:key()) -> {ok, #mnode{}} | {error, _}.
 get_meta(ExpectedType, Key) ->
@@ -78,3 +111,32 @@ get_meta(ExpectedType, Key) ->
                }},
     {ok, Meta}
   end.
+
+-spec collect_instance(lee_metrics:type(), lee:data(), #mnode{}, lee:key()) ->
+        lee_metrics:metric_value().
+collect_instance(counter_metric, Data, _MNode, Key) ->
+  Counters = lee_metrics_registry:get_metrics(Data, Key),
+  lists:foldl(fun(Ctr, Acc) ->
+                  counters:get(Ctr, 1) + Acc
+              end,
+              0,
+              Counters);
+collect_instance(gauge_metric, Data, #mnode{metaparams = MPs}, Key) ->
+  AggreMethod = maps:get(aggregate, MPs, sum),
+  Gauges = lee_metrics_registry:get_metrics(Data, Key),
+  {Len, Sum} = lists:foldl(fun(Ctr, {Len, Sum}) ->
+                               { Len + 1
+                               , atomics:get(Ctr, 1) + Sum
+                               }
+                           end,
+                           {0, 0},
+                           Gauges),
+  case AggreMethod of
+    sum ->
+      Sum;
+    avg ->
+      Sum / Len
+  end.
+
+is_external(_) ->
+  false.
