@@ -120,35 +120,37 @@ gauge_test_() ->
 
 external_test_() ->
   setup(
-    [ ?_assertMatch([{_, I}] when is_integer(I),
-                    collect([erlang, reductions]))
-    , ?_assertMatch([{_, I}] when is_integer(I),
-                    collect([erlang, context_switches]))
-    , ?_assertMatch([{_, I}] when is_integer(I),
-                    collect([erlang, run_time]))
-    , ?_assertMatch([{_, I}] when is_integer(I),
-                    collect([erlang, gc, number]))
-    , ?_assertMatch([{_, I}] when is_integer(I),
-                    collect([erlang, gc, reclaimed]))
+    [ ?_assertMatch([_], collect([erlang, processes, reductions]))
+    , ?_assertMatch([_], collect([erlang, context_switches]))
+    , ?_assertMatch([_], collect([erlang, processes, gc, number]))
+    , ?_assertMatch([_], collect([erlang, processes, gc, reclaimed]))
     , ?_test(
          begin
-           [In, Out] = collect([erlang, port, io, {}, bytes]),
-           ?assertMatch({[erlang, port, io, {input}, bytes], I} when is_integer(I), In),
-           ?assertMatch({[erlang, port, io, {output}, bytes], I} when is_integer(I), Out)
+           [In, Out] = collect([erlang, ports, io, {}, bytes]),
+           ?assertMatch({[erlang, ports, io, {input}, bytes], I} when is_integer(I), In),
+           ?assertMatch({[erlang, ports, io, {output}, bytes], I} when is_integer(I), Out)
          end)
+    , ?_assertMatch([_], collect([erlang, ports, count]))
+    , ?_assertMatch([_], collect([erlang, ports, limit]))
     , ?_test(
          begin
-           Values = collect([erlang, run_queue, {}, length]),
+           Values = collect([erlang, schedulers, run_queue, {}, length]),
            [DCPU, DIO, N0 | _] = Values,
-           ?assertMatch({[erlang, run_queue, {dcpu}, length], I} when is_integer(I), DCPU),
-           ?assertMatch({[erlang, run_queue, {dio}, length], I} when is_integer(I), DIO),
-           ?assertMatch({[erlang, run_queue, {0}, length], I} when is_integer(I), N0)
+           ?assertMatch({[erlang, schedulers, run_queue, {dcpu}, length], I} when is_integer(I), DCPU),
+           ?assertMatch({[erlang, schedulers, run_queue, {dio}, length], I} when is_integer(I), DIO),
+           ?assertMatch({[erlang, schedulers, run_queue, {0}, length], I} when is_integer(I), N0)
          end)
     , ?_test(
          begin
-           Values = collect([erlang, microstate_accounting, {}, counters, {}, value]),
+           Values = collect([erlang, schedulers, microstate_accounting, {}, counters, {}, value]),
            ?assertMatch([_ | _], Values)
          end)
+    , ?_assertMatch([_], collect([erlang, atoms, count]))
+    , ?_assertMatch([_], collect([erlang, atoms, limit]))
+    , ?_assertMatch([_], collect([erlang, schedulers, online]))
+    , ?_assertMatch([_], collect([erlang, schedulers, dirty_cpu_online]))
+    , ?_assertMatch([_], collect([erlang, schedulers, dirty_io]))
+    , ?_assertMatch([_], collect([erlang, schedulers, run_time]))
     ]).
 
 setup(Body) ->

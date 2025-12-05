@@ -7,60 +7,54 @@
 
 model() ->
   #{erlang =>
-      #{ reductions =>
-           {[external_counter_metric],
-            #{ oneliner => "Total number of reductions for all processes"
-             , doc => """
-                      This value does not include reductions performed
-                      in current time slices of currently scheduled
-                      processes.
-                      """
-             , collect_callback => fun reductions/1
-             }}
+      #{ processes =>
+           #{ reductions =>
+                {[external_counter_metric],
+                 #{ oneliner => "Total number of reductions for all processes"
+                  , doc => """
+                           This value does not include reductions performed
+                           in current time slices of currently scheduled
+                           processes.
+                           """
+                  , collect_callback => fun reductions/1
+                  }}
+            , gc =>
+                #{ number =>
+                     {[external_counter_metric],
+                      #{ oneliner => "Number of GCs"
+                       , collect_callback => fun gc_number/1
+                       }}
+                 , reclaimed =>
+                     {[external_counter_metric],
+                      #{ oneliner => "Total number of bytes reclaimed by GC"
+                       , unit => ~b"B"
+                       , collect_callback => fun gc_reclaimed/1
+                       }}
+                 }
+            }
        , context_switches =>
            {[external_counter_metric],
             #{ oneliner => "Total number of context switches since the system started"
              , collect_callback => fun context_switches/1
              }}
-       , run_time =>
-           {[external_counter_metric],
-            #{ oneliner => "Run time for all threads in the Erlang VM"
-             , collect_callback => fun run_time/1
-             }}
-       , microstate_accounting =>
-           {[map],
-            #{ oneliner => "How much time the Erlang runtime system spends doing various tasks"
-             , doc => """
-                      Note: this metric type is disabled by default.
-                      """
-             , key_elements => [[scheduler], [type]]
-             },
-            #{ scheduler =>
-                 {[value],
-                  #{ oneliner => "Thread ID"
-                   , type => non_neg_integer()
-                   }}
-             , type =>
-                 {[value],
-                  #{ oneliner => "Thread type"
-                   , type => atom()
-                   }}
-             , counters =>
-                 {[map],
-                  #{ key_elements => [[task]]
-                   },
-                  #{ task =>
-                       {[value],
-                        #{ type => atom()
-                         }}
-                   , value =>
-                       {[external_counter_metric],
-                        #{ collect_callback => fun microstate_accounting/1
-                         }}
-                   }}
-             }}
-       , port =>
-           #{ io =>
+       , ports =>
+           #{ count =>
+                {[external_counter_metric],
+                 #{ oneliner => "Number of ports"
+                  , collect_callback =>
+                      fun(Key) ->
+                          [{Key, erlang:system_info(port_count)}]
+                      end
+                  }}
+            , limit =>
+                {[external_counter_metric],
+                 #{ oneliner => "System-wide limit on the number of ports"
+                  , collect_callback =>
+                      fun(Key) ->
+                          [{Key, erlang:system_info(port_limit)}]
+                      end
+                  }}
+            , io =>
                {[map],
                 #{ key_elements => [[direction]]
                  },
@@ -75,31 +69,97 @@ model() ->
                        , collect_callback => fun io/1
                        }}
                  }}}
-       , run_queue =>
-           {[map],
-            #{ key_elements => [[scheduler]]
-             },
-            #{ scheduler =>
-                 {[value],
-                  #{ type => union([non_neg_integer(), dcpu, dio])
-                   }}
-             , length =>
-                 {[external_gauge_metric],
-                  #{ collect_callback => fun run_queue/1
-                   }}
-             }}
-       , gc =>
-           #{ number =>
+       , atoms =>
+           #{ count =>
                 {[external_counter_metric],
-                 #{ oneliner => "Number of GCs"
-                  , collect_callback => fun gc_number/1
+                 #{ oneliner => "Number of atoms created in the VM"
+                  , collect_callback =>
+                      fun(MKey) ->
+                          [{MKey, erlang:system_info(atom_count)}]
+                      end
                   }}
-            , reclaimed =>
+            , limit =>
                 {[external_counter_metric],
-                 #{ oneliner => "Total number of bytes reclaimed by GC"
-                  , unit => ~b"B"
-                  , collect_callback => fun gc_reclaimed/1
+                 #{ oneliner => "Maximum number of atoms"
+                  , collect_callback =>
+                      fun(MKey) ->
+                          [{MKey, erlang:system_info(atom_limit)}]
+                      end
                   }}
+            }
+       , schedulers =>
+           #{ online =>
+                {[external_gauge_metric],
+                 #{ collect_callback =>
+                      fun(MKey) ->
+                          [{MKey, erlang:system_info(schedulers_online)}]
+                      end
+                  }}
+            , dirty_cpu_online =>
+                {[external_gauge_metric],
+                 #{ collect_callback =>
+                      fun(MKey) ->
+                          [{MKey, erlang:system_info(dirty_cpu_schedulers_online)}]
+                      end
+                  }}
+            , dirty_io =>
+                {[external_gauge_metric],
+                 #{ collect_callback =>
+                      fun(MKey) ->
+                          [{MKey, erlang:system_info(dirty_io_schedulers)}]
+                      end
+                  }}
+            , run_time =>
+                {[external_counter_metric],
+                 #{ oneliner => "Total run time for all threads in the Erlang VM"
+                  , unit => ~b"ms"
+                  , collect_callback => fun run_time/1
+                  }}
+            , run_queue =>
+                {[map],
+                 #{ key_elements => [[scheduler]]
+                  },
+                 #{ scheduler =>
+                      {[value],
+                       #{ type => union([non_neg_integer(), dcpu, dio])
+                        }}
+                  , length =>
+                      {[external_gauge_metric],
+                       #{ collect_callback => fun run_queue/1
+                        }}
+                  }}
+            , microstate_accounting =>
+                {[map],
+                 #{ oneliner => "How much time the Erlang runtime system spends doing various tasks"
+                  , doc => """
+                           Note: this metric type is disabled by default.
+                           """
+                  , key_elements => [[scheduler], [type]]
+                  },
+                 #{ scheduler =>
+                      {[value],
+                       #{ oneliner => "Thread ID"
+                        , type => non_neg_integer()
+                        }}
+                  , type =>
+                      {[value],
+                       #{ oneliner => "Thread type"
+                        , type => atom()
+                        }}
+                  , counters =>
+                      {[map],
+                       #{key_elements => [[task]]},
+                       #{ task =>
+                            {[value],
+                             #{ type => atom()
+                              }}
+                        , value =>
+                            {[external_counter_metric],
+                             #{ collect_callback => fun microstate_accounting/1
+                              }}
+                        }}
+                  }}
+
             }
        }}.
 
