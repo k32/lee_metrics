@@ -144,6 +144,11 @@ external_test_() ->
            ?assertMatch({[erlang, run_queue, {dio}, length], I} when is_integer(I), DIO),
            ?assertMatch({[erlang, run_queue, {0}, length], I} when is_integer(I), N0)
          end)
+    , ?_test(
+         begin
+           Values = collect([erlang, microstate_accounting, {}, counters, {}, value]),
+           ?assertMatch([_ | _], Values)
+         end)
     ]).
 
 setup(Body) ->

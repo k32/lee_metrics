@@ -27,6 +27,38 @@ model() ->
             #{ oneliner => "Run time for all threads in the Erlang VM"
              , collect_callback => fun run_time/1
              }}
+       , microstate_accounting =>
+           {[map],
+            #{ oneliner => "How much time the Erlang runtime system spends doing various tasks"
+             , doc => """
+                      Note: this metric type is disabled by default.
+                      """
+             , key_elements => [[scheduler], [type]]
+             },
+            #{ scheduler =>
+                 {[value],
+                  #{ oneliner => "Thread ID"
+                   , type => non_neg_integer()
+                   }}
+             , type =>
+                 {[value],
+                  #{ oneliner => "Thread type"
+                   , type => atom()
+                   }}
+             , counters =>
+                 {[map],
+                  #{ key_elements => [[task]]
+                   },
+                  #{ task =>
+                       {[value],
+                        #{ type => atom()
+                         }}
+                   , value =>
+                       {[external_counter_metric],
+                        #{ collect_callback => fun microstate_accounting/1
+                         }}
+                   }}
+             }}
        , port =>
            #{ io =>
                {[map],
@@ -115,13 +147,6 @@ run_queue(MKey) ->
       L0
   end.
 
-subst_key(Key, []) ->
-  Key;
-subst_key([?children | Rest], [A|L]) ->
-  [A | subst_key(Rest, L)];
-subst_key([A | Rest], L) ->
-  [A | subst_key(Rest, L)].
-
 gc_number(K) ->
   {N, _, _} = erlang:statistics(garbage_collection),
   [{K, N}].
@@ -129,3 +154,24 @@ gc_number(K) ->
 gc_reclaimed(K) ->
   {_, N, _} = erlang:statistics(garbage_collection),
   [{K, N * erlang:system_info(wordsize)}].
+
+microstate_accounting(MKey) ->
+  lists:flatmap(
+    fun(#{id := Id, type := Type, counters := Cntrs}) ->
+        maps:fold(
+          fun(Task, Val, Acc) ->
+              [ {subst_key(MKey, [{Id, Type}, {Task}]), Val}
+              | Acc
+              ]
+          end,
+          [],
+          Cntrs)
+    end,
+    erlang:statistics(microstate_accounting)).
+
+subst_key(Key, []) ->
+  Key;
+subst_key([?children | Rest], [A|L]) ->
+  [A | subst_key(Rest, L)];
+subst_key([A | Rest], L) ->
+  [A | subst_key(Rest, L)].
