@@ -10,10 +10,16 @@
 
 -export_type([ type/0, metric_value/0, metric_data/0, metric/0
              , options/0
-             , counter/0
+             , counter/0, gauge/0
              ]).
 
 -include_lib("lee/include/lee.hrl").
+-include_lib("typerefl/include/types.hrl").
+-include_lib("kernel/include/logger.hrl").
+
+-ifdef(TEST).
+-reflect_type([metric_data/0]).
+-endif.
 
 %%================================================================================
 %% Type declarations
@@ -55,7 +61,9 @@ collect(MKey) ->
       false ->
         Instances = lee:list(Model, Data, MKey),
         Values = [{I, collect_instance(Type, Data, MNode, I)} || I <- Instances],
-        {ok, MNode, Values}
+        {ok, MNode, Values};
+      true ->
+        {ok, MNode, collect_external(MKey, MNode)}
     end
   end.
 
@@ -138,5 +146,30 @@ collect_instance(gauge_metric, Data, #mnode{metaparams = MPs}, Key) ->
       Sum / Len
   end.
 
+-ifndef(TEST).
+collect_external(MKey, MNode) ->
+  #{collect_callback := CB} = MNode#mnode.metaparams,
+  try CB(MKey)
+  catch
+    EC:Err:Stacktrace ->
+      ?LOG_ERROR(#{ msg => external_metric_crash
+                  , EC => Err
+                  , stacktrace => Stacktrace
+                  , key => MKey
+                  }),
+      []
+  end.
+-else.
+collect_external(MKey, MNode) ->
+  #{collect_callback := CB} = MNode#mnode.metaparams,
+  Values = CB(MKey),
+  ok = typerefl:typecheck(metric_data(), Values),
+  Values.
+-endif.
+
+is_external(external_counter_metric) ->
+  true;
+is_external(external_gauge_metric) ->
+  true;
 is_external(_) ->
   false.

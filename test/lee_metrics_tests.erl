@@ -25,6 +25,7 @@ model() ->
            , aggregate => sum
            }}
      },
+  External = lee_metrics_vm:model(),
   Mapped =
     #{mapped =>
         {[map],
@@ -51,6 +52,7 @@ model() ->
       ],
       [ Base
       , Mapped
+      , External
       ]),
   Cooked.
 
@@ -116,8 +118,45 @@ gauge_test_() ->
          end)
     ]).
 
+external_test_() ->
+  setup(
+    [ ?_assertMatch([{_, I}] when is_integer(I),
+                    collect([erlang, reductions]))
+    , ?_assertMatch([{_, I}] when is_integer(I),
+                    collect([erlang, context_switches]))
+    , ?_assertMatch([{_, I}] when is_integer(I),
+                    collect([erlang, run_time]))
+    , ?_assertMatch([{_, I}] when is_integer(I),
+                    collect([erlang, gc, number]))
+    , ?_assertMatch([{_, I}] when is_integer(I),
+                    collect([erlang, gc, reclaimed]))
+    , ?_test(
+         begin
+           [In, Out] = collect([erlang, port, io, {}, bytes]),
+           ?assertMatch({[erlang, port, io, {input}, bytes], I} when is_integer(I), In),
+           ?assertMatch({[erlang, port, io, {output}, bytes], I} when is_integer(I), Out)
+         end)
+    , ?_test(
+         begin
+           Values = collect([erlang, run_queue, {}, length]),
+           [DCPU, DIO, N0 | _] = Values,
+           ?assertMatch({[erlang, run_queue, {dcpu}, length], I} when is_integer(I), DCPU),
+           ?assertMatch({[erlang, run_queue, {dio}, length], I} when is_integer(I), DIO),
+           ?assertMatch({[erlang, run_queue, {0}, length], I} when is_integer(I), N0)
+         end)
+    ]).
+
 setup(Body) ->
   {setup,
    fun() -> {ok, Pid} = lee_metrics_sup:start_link(model(), []), Pid end,
    fun(Pid) -> unlink(Pid), lee_metrics_sup:stop() end,
    Body}.
+
+collect(MKey) ->
+  {ok, _MNode, Instances} = lee_metrics:collect(MKey),
+  lists:foreach(
+    fun({Key, _}) ->
+        ?assertEqual(MKey, lee_model:get_model_key(Key))
+    end,
+    Instances),
+  Instances.

@@ -32,11 +32,7 @@
 
 -spec typeof(#mnode{}) -> {ok, lee_metrics:type()} | {error, not_a_metric}.
 typeof(#mnode{metatypes = MTs}) ->
-  Res = lists:search(fun(counter_metric) -> true;
-                        (gauge_metric) -> true;
-                        (_) -> false
-                     end,
-                     MTs),
+  Res = lists:search(fun(A) -> lists:member(A, ?lee_metric_types) end, MTs),
   case Res of
     {value, Type} ->
       {ok, Type};
@@ -53,12 +49,30 @@ names(_) ->
 
 metaparams(counter_metric) ->
   [ {optional, unit, binary()}
-  | lee_doc:documented()];
+  , {optional, wrap_around, pos_integer()}
+  | lee_doc:documented()
+  ];
 metaparams(gauge_metric) ->
   [ {optional, unit, binary()}
   , {optional, signed, boolean()}
   , {optional, aggregate, gauge_aggregate()}
-  | lee_doc:documented()].
+  | lee_doc:documented()
+  ];
+metaparams(external_counter_metric) ->
+  %% TODO: should be fun
+  [ {mandatory, collect_callback, term()}
+  | metaparams(counter_metric)
+  ];
+metaparams(external_gauge_metric) ->
+  %% TODO: should be fun
+  [ {mandatory, collect_callback, term()}
+  | metaparams(gauge_metric)
+  ];
+metaparams(histogram_metric) ->
+  [ {optional, xunit, binary()}
+  , {mandatory, buckets, list(number())}
+  | lee_doc:documented()
+  ].
 
 meta_validate_node(Type, _Model, _Key, #mnode{metatypes = MTs}) ->
   Errors = case [I || I <- MTs, I =/= Type, J <- ?lee_metric_types, I =:= J] of
