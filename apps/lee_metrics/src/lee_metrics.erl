@@ -8,7 +8,8 @@
 %% internal exports:
 -export([]).
 
--export_type([ type/0, metric_value/0, metric_data/0, metric/0
+-export_type([ type/0, metric/0
+             , metric_value/0
              , options/0
              , counter/0, gauge/0
              ]).
@@ -17,9 +18,7 @@
 -include_lib("typerefl/include/types.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--ifdef(TEST).
 -reflect_type([metric_data/0]).
--endif.
 
 %%================================================================================
 %% Type declarations
@@ -27,7 +26,11 @@
 
 -type options() :: [{monitor, pid()} | async].
 
--type type() :: counter_metric | gauge_metric.
+-type type() :: counter_metric
+              | gauge_metric
+              | external_counter_metric
+              | external_gauge_metric
+              | histogram_metric.
 
 -type metric_value() ::
         non_neg_integer() % counter_metric
@@ -38,7 +41,7 @@
 
 -opaque counter() :: counters:counters_ref().
 
--opaque gauge() :: atomics:atomic_ref().
+-opaque gauge() :: atomics:atomics_ref().
 
 -type metric() :: counter() | gauge().
 

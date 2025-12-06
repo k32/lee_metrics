@@ -1,0 +1,20 @@
+{"1.2.0",
+[{<<"erlang_qq">>,
+  {git,"https://github.com/k32/erlang_qq.git",
+       {ref,"21fe46d8c03ce2f65733aadf3ad97b7bb7edea28"}},
+  2},
+ {<<"lee">>,
+  {git,"https://github.com/k32/lee.git",
+       {ref,"19d31d94f03e794cb7f6c1028b6b74306279e84b"}},
+  0},
+ {<<"snabbkaffe">>,{pkg,<<"snabbkaffe">>,<<"1.0.10">>},1},
+ {<<"typerefl">>,
+  {git,"https://github.com/ieQu1/typerefl.git",
+       {ref,"a202b2a483745373057cc28e04f259a28c4a5c27"}},
+  1}]}.
+[
+{pkg_hash,[
+ {<<"snabbkaffe">>, <<"9BE2F54F61FC6862391B666B2B5B76C3FA53598E2989A17CEF1B48CF347A8A63">>}]},
+{pkg_hash_ext,[
+ {<<"snabbkaffe">>, <<"70A98DF36AE756908D55B5770891D443D63C903833E3E87D544036E13D4FAC26">>}]}
+].

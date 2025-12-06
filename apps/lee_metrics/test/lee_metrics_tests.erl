@@ -155,7 +155,7 @@ external_test_() ->
 
 setup(Body) ->
   {setup,
-   fun() -> {ok, Pid} = lee_metrics_sup:start_link(model(), []), Pid end,
+   fun() -> {ok, Pid} = lee_metrics_sup:start_link(model()), Pid end,
    fun(Pid) -> unlink(Pid), lee_metrics_sup:stop() end,
    Body}.
 
