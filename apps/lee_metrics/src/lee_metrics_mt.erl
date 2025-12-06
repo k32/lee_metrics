@@ -70,7 +70,7 @@ metaparams(external_gauge_metric) ->
   ];
 metaparams(histogram_metric) ->
   [ {optional, xunit, binary()}
-  , {mandatory, buckets, list(number())}
+  , {mandatory, buckets, nonempty_list(number())}
   | lee_doc:documented()
   ].
 

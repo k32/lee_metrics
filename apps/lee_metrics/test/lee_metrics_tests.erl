@@ -24,6 +24,11 @@ model() ->
            , signed => false
            , aggregate => sum
            }}
+     , hist =>
+         {[histogram_metric],
+          #{ xunit => ~b"ms"
+           , buckets => [10, 100, 1000]
+           }}
      },
   External = lee_metrics_vm:model(),
   Mapped =
@@ -115,6 +120,28 @@ gauge_test_() ->
            lee_metrics:gauge_set(G1, 1),
            lee_metrics:gauge_set(G2, 2),
            ?assertMatch({ok, _, [{_, 3}]}, lee_metrics:collect([gauge2]))
+         end)
+    ]).
+
+histogram_test_() ->
+  setup(
+    [ ?_test(
+         begin
+           {ok, H1} = lee_metrics:new_histogram([hist], []),
+           {ok, H2} = lee_metrics:new_histogram([hist], []),
+           ?assertEqual(
+              [{[hist], [{10, 0}, {100, 0}, {1000, 0}, {infinity, 0}]}],
+              collect([hist])),
+           ok = lee_metrics:histogram_observe(H1, 1),
+           ok = lee_metrics:histogram_observe(H2, 10000),
+           ?assertEqual(
+              [{[hist], [{10, 1}, {100, 0}, {1000, 0}, {infinity, 1}]}],
+              collect([hist])),
+           ok = lee_metrics:histogram_observe(H1, 11),
+           ok = lee_metrics:histogram_observe(H2, 101),
+           ?assertEqual(
+              [{[hist], [{10, 1}, {100, 1}, {1000, 1}, {infinity, 1}]}],
+              collect([hist]))
          end)
     ]).
 

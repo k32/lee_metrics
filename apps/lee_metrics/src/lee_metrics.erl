@@ -4,6 +4,7 @@
 -export([collect/1, unregister_metric/2]).
 -export([new_counter/2, incr/2]).
 -export([new_gauge/2, gauge_set/2]).
+-export([new_histogram/2, histogram_observe/2]).
 
 %% internal exports:
 -export([]).
@@ -11,7 +12,7 @@
 -export_type([ type/0, metric/0
              , metric_value/0
              , options/0
-             , counter/0, gauge/0
+             , counter/0, gauge/0, histogram/0
              ]).
 
 -include_lib("lee/include/lee.hrl").
@@ -19,6 +20,10 @@
 -include_lib("kernel/include/logger.hrl").
 
 -reflect_type([metric_data/0]).
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 %%================================================================================
 %% Type declarations
@@ -33,15 +38,25 @@
               | histogram_metric.
 
 -type metric_value() ::
-        non_neg_integer() % counter_metric
-      | integer()         % gauge
-      | float().          % gauge
+        non_neg_integer()                           % counter_metric
+      | integer()                                   % gauge
+      | float()                                     % gauge
+      | [{number() | infinity, non_neg_integer()}]. % histogram
 
 -type metric_data() :: [{lee:key(), metric_value()}].
 
 -opaque counter() :: counters:counters_ref().
 
 -opaque gauge() :: atomics:atomics_ref().
+
+-record(histogram,
+        { buckets :: tuple()
+        , counters :: counters:counters_ref()
+        , min :: number()
+        , max :: number()
+        }).
+
+-opaque histogram() :: #histogram{}.
 
 -type metric() :: counter() | gauge().
 
@@ -86,6 +101,15 @@ new_gauge(Key, Options) ->
 gauge_set(Ref, Value) ->
   atomics:put(Ref, 1, Value).
 
+-spec new_histogram(lee:key(), options()) -> {ok, histogram()} | {error, _}.
+new_histogram(Key, Options) ->
+  register_metric(histogram_metric, Key, Options).
+
+-spec histogram_observe(histogram(), number()) -> ok.
+histogram_observe(Histogram = #histogram{counters = Counters}, Val) ->
+  Idx = hist_index(Val, Histogram),
+  counters:add(Counters, Idx, 1).
+
 %%================================================================================
 %% Internal exports
 %%================================================================================
@@ -108,7 +132,9 @@ create_metric(counter_metric, _) ->
   {ok, counters:new(1, [])};
 create_metric(gauge_metric, #mnode{metaparams = MPs}) ->
   Signed = maps:get(signed, MPs, false),
-  {ok, atomics:new(1, [{signed, Signed}])}.
+  {ok, atomics:new(1, [{signed, Signed}])};
+create_metric(histogram_metric, #mnode{metaparams = MPs}) ->
+  create_histogram(MPs).
 
 -spec get_meta(type(), lee:key()) -> {ok, #mnode{}} | {error, _}.
 get_meta(ExpectedType, Key) ->
@@ -147,7 +173,22 @@ collect_instance(gauge_metric, Data, #mnode{metaparams = MPs}, Key) ->
       Sum;
     avg ->
       Sum / Len
-  end.
+  end;
+collect_instance(histogram_metric, Data, #mnode{metaparams = #{buckets := Buckets}}, Key) ->
+  Hists = lee_metrics_registry:get_metrics(Data, Key),
+  {L, _} = lists:foldl(
+             fun(LT, {L, Idx}) ->
+                 Sum = lists:foldl(
+                         fun(#histogram{counters = Ctrs}, Acc) ->
+                             Acc + counters:get(Ctrs, Idx)
+                         end,
+                         0,
+                         Hists),
+                 {[{LT, Sum} | L], Idx - 1}
+             end,
+             {[], length(Buckets) + 1},
+             [infinity | lists:reverse(Buckets)]),
+  L.
 
 -ifndef(TEST).
 collect_external(MKey, MNode) ->
@@ -176,3 +217,76 @@ is_external(external_gauge_metric) ->
   true;
 is_external(_) ->
   false.
+
+%%--------------------------------------------------------------------------------
+%% Histograms
+%%--------------------------------------------------------------------------------
+
+create_histogram(#{buckets := []}) ->
+  {error, invalid_histogram};
+create_histogram(#{buckets := Buckets0}) when is_list(Buckets0) ->
+  Buckets = list_to_tuple(lists:sort(Buckets0)),
+  Counters = counters:new(size(Buckets) + 1, [write_concurrency]),
+  {ok, #histogram{ buckets = Buckets
+                 , counters = Counters
+                 , min = lists:min(Buckets0)
+                 , max = lists:max(Buckets0)
+                 }};
+create_histogram(_) ->
+  {error, wrong_metric_type}.
+
+-spec hist_index(number(), histogram()) -> pos_integer().
+hist_index(Val, #histogram{min = Min}) when Val =< Min ->
+  1;
+hist_index(Val, #histogram{max = Max, buckets = Buckets}) when Val > Max ->
+  size(Buckets) + 1;
+hist_index(Val, #histogram{buckets = Buckets}) ->
+  hist_index(Val, Buckets, 1, size(Buckets)).
+
+hist_index(Val, Buckets, MinIdx, MaxIdx) ->
+  Mid = (MinIdx + MaxIdx) div 2,
+  UpperBound = element(Mid, Buckets),
+  if Val > UpperBound ->
+      hist_index(Val, Buckets, Mid + 1, MaxIdx);
+     element(Mid - 1, Buckets) < Val ->
+      Mid;
+     true ->
+      hist_index(Val, Buckets, MinIdx, Mid)
+  end.
+
+-ifdef(TEST).
+
+hist_index0_test_() ->
+  [ ?_assertMatch({error, wrong_metric_type}, create_histogram(#{}))
+  , ?_assertMatch({error, invalid_histogram}, create_histogram(#{buckets => []}))
+  ].
+
+hist_index1_test_() ->
+  {ok, H} = create_histogram(#{buckets => [1]}),
+  [ ?_assertMatch(1, hist_index(0, H))
+  , ?_assertMatch(1, hist_index(1, H))
+  , ?_assertMatch(2, hist_index(2, H))
+  , ?_assertMatch(2, hist_index(100, H))
+  ].
+
+hist_index2_test_() ->
+  {ok, H} = create_histogram(#{buckets => [1, 10]}),
+  [ ?_assertMatch(1, hist_index(0, H))
+  , ?_assertMatch(1, hist_index(1, H))
+  , ?_assertMatch(2, hist_index(2, H))
+  , ?_assertMatch(2, hist_index(10, H))
+  , ?_assertMatch(3, hist_index(11, H))
+  ].
+
+hist_index3_test_() ->
+  {ok, H} = create_histogram(#{buckets => [1, 10, 20]}),
+  [ ?_assertMatch(1, hist_index(0, H))
+  , ?_assertMatch(1, hist_index(1, H))
+  , ?_assertMatch(2, hist_index(2, H))
+  , ?_assertMatch(2, hist_index(10, H))
+  , ?_assertMatch(3, hist_index(15, H))
+  , ?_assertMatch(3, hist_index(20, H))
+  , ?_assertMatch(4, hist_index(21, H))
+  ].
+
+-endif.
