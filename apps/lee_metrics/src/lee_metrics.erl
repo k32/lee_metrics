@@ -10,18 +10,16 @@
 -export([]).
 
 -export_type([ type/0, metric/0
-             , metric_value/0
+             , metric_value/0, metric_data/0
              , options/0
              , counter/0, gauge/0, histogram/0
              ]).
 
 -include_lib("lee/include/lee.hrl").
--include_lib("typerefl/include/types.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--reflect_type([metric_data/0]).
-
 -ifdef(TEST).
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
@@ -206,9 +204,7 @@ collect_external(MKey, MNode) ->
 -else.
 collect_external(MKey, MNode) ->
   #{collect_callback := CB} = MNode#mnode.metaparams,
-  Values = CB(MKey),
-  ok = typerefl:typecheck(metric_data(), Values),
-  Values.
+  CB(MKey).
 -endif.
 
 is_external(external_counter_metric) ->
@@ -236,9 +232,9 @@ create_histogram(_) ->
   {error, wrong_metric_type}.
 
 -spec hist_index(number(), histogram()) -> pos_integer().
-hist_index(Val, #histogram{min = Min}) when Val =< Min ->
+hist_index(Val, #histogram{min = Min}) when Val < Min ->
   1;
-hist_index(Val, #histogram{max = Max, buckets = Buckets}) when Val > Max ->
+hist_index(Val, #histogram{max = Max, buckets = Buckets}) when Val >= Max ->
   size(Buckets) + 1;
 hist_index(Val, #histogram{buckets = Buckets}) ->
   hist_index(Val, Buckets, 1, size(Buckets)).
@@ -246,9 +242,9 @@ hist_index(Val, #histogram{buckets = Buckets}) ->
 hist_index(Val, Buckets, MinIdx, MaxIdx) ->
   Mid = (MinIdx + MaxIdx) div 2,
   UpperBound = element(Mid, Buckets),
-  if Val > UpperBound ->
+  if Val >= UpperBound ->
       hist_index(Val, Buckets, Mid + 1, MaxIdx);
-     element(Mid - 1, Buckets) < Val ->
+     element(Mid - 1, Buckets) =< Val ->
       Mid;
      true ->
       hist_index(Val, Buckets, MinIdx, Mid)
@@ -262,7 +258,7 @@ hist_index0_test_() ->
   ].
 
 hist_index1_test_() ->
-  {ok, H} = create_histogram(#{buckets => [1]}),
+  {ok, H} = create_histogram(#{buckets => [2]}),
   [ ?_assertMatch(1, hist_index(0, H))
   , ?_assertMatch(1, hist_index(1, H))
   , ?_assertMatch(2, hist_index(2, H))
@@ -270,23 +266,69 @@ hist_index1_test_() ->
   ].
 
 hist_index2_test_() ->
-  {ok, H} = create_histogram(#{buckets => [1, 10]}),
+  {ok, H} = create_histogram(#{buckets => [2, 10]}),
   [ ?_assertMatch(1, hist_index(0, H))
   , ?_assertMatch(1, hist_index(1, H))
   , ?_assertMatch(2, hist_index(2, H))
-  , ?_assertMatch(2, hist_index(10, H))
+  , ?_assertMatch(3, hist_index(10, H))
   , ?_assertMatch(3, hist_index(11, H))
   ].
 
 hist_index3_test_() ->
-  {ok, H} = create_histogram(#{buckets => [1, 10, 20]}),
+  {ok, H} = create_histogram(#{buckets => [2, 10, 20]}),
   [ ?_assertMatch(1, hist_index(0, H))
   , ?_assertMatch(1, hist_index(1, H))
   , ?_assertMatch(2, hist_index(2, H))
-  , ?_assertMatch(2, hist_index(10, H))
+  , ?_assertMatch(2, hist_index(9, H))
+  , ?_assertMatch(3, hist_index(10, H))
   , ?_assertMatch(3, hist_index(15, H))
-  , ?_assertMatch(3, hist_index(20, H))
-  , ?_assertMatch(4, hist_index(21, H))
+  , ?_assertMatch(4, hist_index(20, H))
+  , ?_assertMatch(4, hist_index(200, H))
   ].
+
+buckets_gen() ->
+  ?LET(L, non_empty(list(integer(0, 2))),
+       begin
+         element(1,
+           lists:mapfoldl(
+             fun(Incr, Acc) ->
+                 {Acc, Acc + Incr}
+             end,
+             0,
+             L))
+       end).
+
+hist_index_prop() ->
+  ?FORALL({Val, Buckets},
+          ?LET(B, buckets_gen(),
+               begin
+                 Min = lists:min(B),
+                 Max = lists:max(B),
+                 ?LET(I, integer(Min, Max), {I, B})
+               end),
+          begin
+            {ok, Hist} = create_histogram(#{buckets => Buckets}),
+            #histogram{buckets = Tup, min = Min, max = Max} = Hist,
+            Idx = hist_index(Val, Hist),
+            Val < Max andalso
+              ?assert(
+                 element(Idx, Tup) > Val,
+                 {Val, Buckets, Idx}),
+            Val > Min andalso
+              ?assert(
+                 element(Idx - 1, Tup) =< Val,
+                 {Val, Buckets, Idx}),
+            true
+          end).
+
+hist_index_test_() ->
+  {timeout, 10,
+   ?_assert(
+      proper:quickcheck(
+        hist_index_prop(),
+        [ {numtests, 1000}
+        , {max_size, 100}
+        , {to_file, user}
+        ]))}.
 
 -endif.

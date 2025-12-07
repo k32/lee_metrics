@@ -74,7 +74,7 @@ metaparams(histogram_metric) ->
   | lee_doc:documented()
   ].
 
-meta_validate_node(Type, _Model, Key, MNode) ->
+meta_validate_node(Type, _Model, _Key, MNode) ->
   Results0 = case Type of
                histogram_metric ->
                  [hist_check_buckets(MNode)];
@@ -92,26 +92,25 @@ meta_validate_node(Type, _Model, Key, MNode) ->
 %% Internal functions
 %%================================================================================
 
-hist_check_buckets(#mnode{metaparams = #{buckets := [Fst|L]}}) ->
-  Err = "Invalid bucket specification",
-  Go = fun Go(Prev, L) ->
-           case L of
-             [] ->
-               {[], []};
-             [Next | _] when Next =< Prev ->
-               {[Err], []};
-             [Next | Rest] ->
-               Go(Next, Rest)
-           end
-       end,
-  Go(Fst, L);
+hist_check_buckets(#mnode{metaparams = #{buckets := [Fst|Rest]}}) ->
+  do_check_buckets(Fst, Rest);
 hist_check_buckets(_) ->
   Err = "Invalid bucket specification",
   {[Err], []}.
 
+do_check_buckets(Prev, L) ->
+  case L of
+    [] ->
+      {[], []};
+    [Next | _] when Next =< Prev ->
+      {["Invalid bucket specification: not strictly increasing"], []};
+    [Next | Rest] ->
+      do_check_buckets(Next, Rest)
+  end.
+
 no_other_types(Type, #mnode{metatypes = MTs}) ->
   Errors = case [I || I <- MTs, I =/= Type, J <- ?lee_metric_types, I =:= J] of
              [] -> [];
-             _ -> ["Only one metric type is allowed per Lee model node"]
+             _  -> ["Only one metric type is allowed per Lee model node"]
            end,
   {Errors, []}.
