@@ -74,12 +74,15 @@ metaparams(histogram_metric) ->
   | lee_doc:documented()
   ].
 
-meta_validate_node(Type, _Model, _Key, #mnode{metatypes = MTs}) ->
-  Errors = case [I || I <- MTs, I =/= Type, J <- ?lee_metric_types, I =:= J] of
-             [] -> [];
-             _ -> ["Only one metric type is allowed per Lee model node"]
-           end,
-  {Errors, []}.
+meta_validate_node(Type, _Model, Key, MNode) ->
+  Results0 = case Type of
+               histogram_metric ->
+                 [hist_check_buckets(MNode)];
+               _ ->
+                 []
+             end,
+  Results = [no_other_types(Type, MNode) | Results0],
+  lee_lib:compose_checks(Results).
 
 %%================================================================================
 %% Internal exports
@@ -88,3 +91,27 @@ meta_validate_node(Type, _Model, _Key, #mnode{metatypes = MTs}) ->
 %%================================================================================
 %% Internal functions
 %%================================================================================
+
+hist_check_buckets(#mnode{metaparams = #{buckets := [Fst|L]}}) ->
+  Err = "Invalid bucket specification",
+  Go = fun Go(Prev, L) ->
+           case L of
+             [] ->
+               {[], []};
+             [Next | _] when Next =< Prev ->
+               {[Err], []};
+             [Next | Rest] ->
+               Go(Next, Rest)
+           end
+       end,
+  Go(Fst, L);
+hist_check_buckets(_) ->
+  Err = "Invalid bucket specification",
+  {[Err], []}.
+
+no_other_types(Type, #mnode{metatypes = MTs}) ->
+  Errors = case [I || I <- MTs, I =/= Type, J <- ?lee_metric_types, I =:= J] of
+             [] -> [];
+             _ -> ["Only one metric type is allowed per Lee model node"]
+           end,
+  {Errors, []}.
