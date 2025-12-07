@@ -33,7 +33,8 @@
               | gauge_metric
               | external_counter_metric
               | external_gauge_metric
-              | histogram_metric.
+              | histogram_metric
+              | derivative_metric.
 
 -type metric_value() ::
         non_neg_integer()                           % counter_metric

@@ -15,7 +15,6 @@
 %%================================================================================
 
 -define(SUP, ?MODULE).
--define(SINKS_SUP, lee_metrics_sinks_sup).
 
 -spec start_link(lee:model()) ->
         supervisor:startlink_ret().
@@ -42,12 +41,22 @@ stop() ->
 
 init({top, Model}) ->
   Children = [ registry_spec(Model, [])
+             , derivatives_spec()
              ],
   SupFlags = #{ strategy      => rest_for_one
               , intensity     => 10
               , period        => 10
               },
   {ok, {SupFlags, Children}}.
+
+
+%%================================================================================
+%% Internal exports
+%%================================================================================
+
+%%================================================================================
+%% Internal functions
+%%================================================================================
 
 -spec registry_spec(lee:model(), [lee:data()]) -> supervisor:child_spec().
 registry_spec(Model, BaseData) ->
@@ -58,10 +67,11 @@ registry_spec(Model, BaseData) ->
    , type        => worker
    }.
 
-%%================================================================================
-%% Internal exports
-%%================================================================================
-
-%%================================================================================
-%% Internal functions
-%%================================================================================
+-spec derivatives_spec() -> supervisor:child_spec().
+derivatives_spec() ->
+  #{ id          => derivatives
+   , start       => {lee_metrics_derivatives, start_link, []}
+   , shutdown    => 5_000
+   , restart     => permanent
+   , type        => worker
+   }.

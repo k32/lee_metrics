@@ -72,12 +72,18 @@ metaparams(histogram_metric) ->
   [ {optional, xunit, binary()}
   , {mandatory, buckets, nonempty_list(number())}
   | lee_doc:documented()
+  ];
+metaparams(derivative_metric) ->
+  [ {mandatory, origin, lee:model_key()}
+  | lee_doc:documented()
   ].
 
-meta_validate_node(Type, _Model, _Key, MNode) ->
+meta_validate_node(Type, Model, _Key, MNode) ->
   Results0 = case Type of
                histogram_metric ->
                  [hist_check_buckets(MNode)];
+               derivative_metric ->
+                 [check_derivative(Model, MNode)];
                _ ->
                  []
              end,
@@ -106,6 +112,14 @@ do_check_buckets(Prev, L) ->
       {["Invalid bucket specification: not strictly increasing"], []};
     [Next | Rest] ->
       do_check_buckets(Next, Rest)
+  end.
+
+check_derivative(Model, MNode) ->
+  case lee_metrics_derivatives:derivative_meta(Model, MNode) of
+    {ok, _} ->
+      {[], []};
+    Err ->
+      {[Err], []}
   end.
 
 no_other_types(Type, #mnode{metatypes = MTs}) ->

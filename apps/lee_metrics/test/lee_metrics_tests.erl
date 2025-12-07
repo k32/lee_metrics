@@ -30,6 +30,24 @@ model() ->
            , buckets => [10, 100, 1000]
            }}
      },
+  Derivatives =
+    #{ dctr =>
+         {[derivative_metric],
+          #{ origin => [ctr]
+           }}
+     , dgauge1 =>
+         {[derivative_metric],
+          #{ origin => [gauge1]
+           }}
+     , dgauge2 =>
+         {[derivative_metric],
+          #{ origin => [gauge2]
+           }}
+     , dhist =>
+         {[derivative_metric],
+          #{ origin => [hist]
+           }}
+     },
   External = lee_metrics_vm:model(),
   Mapped =
     #{mapped =>
@@ -58,6 +76,7 @@ model() ->
       [ Base
       , Mapped
       , External
+      , Derivatives
       ]),
   Cooked.
 
@@ -66,6 +85,29 @@ sinks() ->
      , start => {lee_metrics_sink_log, start_link, []}
      , type => worker
      }
+  ].
+
+model_check_test_() ->
+  Compile = fun(Model) ->
+                lee_model:compile(
+                  [lee_metatype:create(lee_metrics_mt)],
+                  [#{m => Model}])
+            end,
+  [ ?_assertMatch(
+       {error, _},
+       Compile({[gauge_metric, counter_metric], #{}}))
+  , ?_assertMatch(
+       {error, _},
+       Compile({[histogram_metric], #{buckets => []}}))
+  , ?_assertMatch(
+       {error, _},
+       Compile({[histogram_metric], #{buckets => [0, 0]}}))
+  , ?_assertMatch(
+       {error, _},
+       Compile({[histogram_metric], #{buckets => [1, 0]}}))
+  , ?_assertMatch(
+       {error, _},
+       Compile({[derivative_metric], #{origin => [missing]}}))
   ].
 
 model_test_() ->
@@ -125,25 +167,24 @@ gauge_test_() ->
 
 histogram_test_() ->
   setup(
-    [ ?_test(
-         begin
-           {ok, H1} = lee_metrics:new_histogram([hist], []),
-           {ok, H2} = lee_metrics:new_histogram([hist], []),
-           ?assertEqual(
-              [{[hist], [{10, 0}, {100, 0}, {1000, 0}, {infinity, 0}]}],
-              collect([hist])),
-           ok = lee_metrics:histogram_observe(H1, 1),
-           ok = lee_metrics:histogram_observe(H2, 10000),
-           ?assertEqual(
-              [{[hist], [{10, 1}, {100, 0}, {1000, 0}, {infinity, 1}]}],
-              collect([hist])),
-           ok = lee_metrics:histogram_observe(H1, 11),
-           ok = lee_metrics:histogram_observe(H2, 101),
-           ?assertEqual(
-              [{[hist], [{10, 1}, {100, 1}, {1000, 1}, {infinity, 1}]}],
-              collect([hist]))
-         end)
-    ]).
+    ?_test(
+       begin
+         {ok, H1} = lee_metrics:new_histogram([hist], []),
+         {ok, H2} = lee_metrics:new_histogram([hist], []),
+         ?assertEqual(
+            [{[hist], [{10, 0}, {100, 0}, {1000, 0}, {infinity, 0}]}],
+            collect([hist])),
+         ok = lee_metrics:histogram_observe(H1, 1),
+         ok = lee_metrics:histogram_observe(H2, 10000),
+         ?assertEqual(
+            [{[hist], [{10, 1}, {100, 0}, {1000, 0}, {infinity, 1}]}],
+            collect([hist])),
+         ok = lee_metrics:histogram_observe(H1, 11),
+         ok = lee_metrics:histogram_observe(H2, 101),
+         ?assertEqual(
+            [{[hist], [{10, 1}, {100, 1}, {1000, 1}, {infinity, 1}]}],
+            collect([hist]))
+       end)).
 
 external_test_() ->
   setup(
