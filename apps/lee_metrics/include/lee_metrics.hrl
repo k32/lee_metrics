@@ -9,6 +9,7 @@
         , histogram_metric
         , external_histogram_metric
         , derivative_metric
+        , summary_metric
         ]).
 
 -endif.

@@ -80,7 +80,12 @@ metaparams(external_histogram_metric) ->
 metaparams(derivative_metric) ->
   [ {mandatory, origin, lee:model_key()}
   | lee_doc:documented()
+  ];
+metaparams(summary_metric) ->
+  [ {optional, unit, binary()}
+  | lee_doc:documented()
   ].
+
 
 meta_validate_node(Type, Model, Key, MNode) ->
   Results0 = case Type of

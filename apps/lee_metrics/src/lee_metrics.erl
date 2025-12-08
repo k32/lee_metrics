@@ -5,6 +5,7 @@
 -export([new_counter/2, incr/2]).
 -export([new_gauge/2, gauge_set/2]).
 -export([new_histogram/2, histogram_observe/2]).
+-export([new_summary/2, summary_observe/2]).
 
 %% internal exports:
 -export([]).
@@ -12,7 +13,7 @@
 -export_type([ type/0, metric/0
              , metric_value/0, metric_data/0
              , options/0
-             , counter/0, gauge/0, histogram/0
+             , counter/0, gauge/0, histogram/0, summary/0
              ]).
 
 -include_lib("lee/include/lee.hrl").
@@ -35,7 +36,8 @@
               | external_gauge_metric
               | histogram_metric
               | external_histogram_metric
-              | derivative_metric.
+              | derivative_metric
+              | summary_metric.
 
 -type metric_value() ::
         non_neg_integer()                           % counter_metric
@@ -58,6 +60,8 @@
         }).
 
 -opaque histogram() :: #histogram{}.
+
+-opaque summary() :: counters:counters_ref().
 
 -type metric() :: counter() | gauge().
 
@@ -140,6 +144,21 @@ histogram_observe(Histogram = #histogram{counters = Counters}, Val) ->
   Idx = hist_index(Val, Histogram),
   counters:add(Counters, Idx, 1).
 
+-doc """
+Create a new summary metric.
+""".
+-spec new_summary(lee:key(), options()) -> {ok, summary()} | {error, _}.
+new_summary(Key, Options) ->
+  register_metric(summary_metric, Key, Options).
+
+-doc """
+Add a sample to the summary.
+""".
+-spec summary_observe(summary(), number()) -> ok.
+summary_observe(Counters, Val) ->
+  counters:add(Counters, 1, 1),
+  counters:add(Counters, 2, Val).
+
 %%================================================================================
 %% Internal exports
 %%================================================================================
@@ -164,7 +183,9 @@ create_metric(gauge_metric, #mnode{metaparams = MPs}) ->
   Signed = maps:get(signed, MPs, false),
   {ok, atomics:new(1, [{signed, Signed}])};
 create_metric(histogram_metric, #mnode{metaparams = MPs}) ->
-  create_histogram(MPs).
+  create_histogram(MPs);
+create_metric(summary_metric, _) ->
+  {ok, counters:new(3, [])}.
 
 -spec get_meta(type(), lee:key()) -> {ok, #mnode{}} | {error, _}.
 get_meta(ExpectedType, Key) ->
@@ -218,7 +239,18 @@ collect_instance(histogram_metric, Data, #mnode{metaparams = #{buckets := Bucket
              end,
              {[], length(Buckets) + 1},
              [infinity | lists:reverse(Buckets)]),
-  L.
+  L;
+collect_instance(summary_metric, Data, _, Key) ->
+  Summaries = lee_metrics_registry:get_metrics(Data, Key),
+  WrapAround = 16#FFFFFFFFFFFFFFFF,
+  lists:foldl(
+    fun(CRef, {N, Sum}) ->
+        { N + counters:get(CRef, 1)
+        , Sum + counters:get(CRef, 2) + (counters:get(CRef, 3) * WrapAround)
+        }
+    end,
+    {0, 0},
+    Summaries).
 
 -ifndef(TEST).
 collect_external(MKey, MNode) ->

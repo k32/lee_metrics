@@ -31,6 +31,10 @@ model() ->
           #{ xunit => ~b"ms"
            , buckets => [10, 100, 1000]
            }}
+     , summary =>
+         {[summary_metric],
+          #{ unit => ~b"ms"
+           }}
      },
   Derivatives =
     #{ dctr =>
@@ -174,6 +178,24 @@ histogram_test_() ->
          ?assertEqual(
             [{[hist], [{10, 1}, {100, 1}, {1000, 1}, {infinity, 1}]}],
             collect([hist]))
+       end)).
+
+summary_test_() ->
+  setup(
+    ?_test(
+       begin
+         {ok, S1} = lee_metrics:new_summary([summary], []),
+         {ok, S2} = lee_metrics:new_summary([summary], []),
+         ?assertMatch(
+            [{_, {0, 0}}],
+            collect([summary])
+           ),
+         lee_metrics:summary_observe(S1, 10),
+         lee_metrics:summary_observe(S2, 20),
+         ?assertMatch(
+            [{_, {2, 30}}],
+            collect([summary])
+           )
        end)).
 
 external_test_() ->
