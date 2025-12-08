@@ -39,6 +39,7 @@ start_link() ->
 -record(datapoint,
         { t_prev :: integer()
         , v_prev :: integer() | [{integer() | infinity, non_neg_integer()}]
+        , key :: lee:key()
         }).
 
 -record(s,
@@ -135,16 +136,16 @@ collect(Model, OldDPs, MKey, DPs0) ->
 
 collect_instance(Type, MKey, Meta, OldDPs, T, Key, Val, {DPs, Deltas}) ->
   case OldDPs of
-    #{Key := Data} ->
-      #datapoint{t_prev = T0, v_prev = Val0} = Data,
+    #{Key := DP} ->
+      #datapoint{t_prev = T0, v_prev = Val0, key = DKey} = DP,
       Dt = (T - T0) / 1_000,
       Delta = calc_delta(Type, Meta, Dt, Val0, Val),
-      {ok, DKey} = derive_key(MKey, Key),
-      { DPs#{Key => #datapoint{t_prev = T, v_prev = Val}}
+      { DPs#{Key => DP#datapoint{t_prev = T, v_prev = Val}}
       , [{DKey, Delta} | Deltas]
       };
     #{} ->
-      { DPs#{Key => #datapoint{t_prev = T, v_prev = Val}}
+      {ok, DKey} = derive_key(MKey, Key),
+      { DPs#{Key => #datapoint{t_prev = T, v_prev = Val, key = DKey}}
       , Deltas
       }
   end.
@@ -198,7 +199,7 @@ derive_key(Derived, Origin) ->
     Base ->
       {ok, InstanceBase ++ Suffix};
     _ ->
-      {error, derived_metric_must_be_in_the_same_map}
+      {error, "Derived metric must be in the same map as the origin"}
   end.
 
 derive_unit(#{unit := U}) ->
