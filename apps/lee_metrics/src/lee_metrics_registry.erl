@@ -3,7 +3,7 @@
 -behavior(gen_server).
 
 %% API:
--export([ register/4, unregister/2
+-export([ add_model/2, register/4, unregister/2
         , model/0, metrics/0, get_metrics/2, get_meta/1, get_meta/2
         ]).
 
@@ -11,7 +11,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 %% internal exports:
--export([start_link/2]).
+-export([start_link/1]).
 
 -include_lib("kernel/include/logger.hrl").
 -include_lib("lee/include/lee.hrl").
@@ -23,6 +23,11 @@
 -define(SERVER, ?MODULE).
 -define(MODEL, lee_metrics_registry_model).
 -define(METRICS, lee_metrics_registry_metrics).
+
+-record(call_add_model,
+        { model_key :: atom()
+        , module :: lee:lee_module()
+        }).
 
 -record(call_register,
         { key :: lee:key()
@@ -40,6 +45,13 @@
 %% API functions
 %%================================================================================
 
+-spec add_model(atom(), lee:lee_module()) -> ok | {error, [string()]}.
+add_model(ModuleId, Module) ->
+  Req = #call_add_model{ model_key = ModuleId
+                       , module = Module
+                       },
+  gen_server:call(?SERVER, Req, infinity).
+
 -spec register(lee_metrics:type(), lee:key(), lee_metrics:options(), lee_metrics:metric()) ->
         ok | {error, _}.
 register(Type, Key, Options, Metric) ->
@@ -50,7 +62,7 @@ register(Type, Key, Options, Metric) ->
                       },
   case lists:member(async, Options) of
     true -> gen_server:cast(?SERVER, Req);
-    false -> gen_server:call(?SERVER, Req)
+    false -> gen_server:call(?SERVER, Req, infinity)
   end.
 
 -spec unregister(lee:key(), lee_metrics:metric()) -> ok.
@@ -99,7 +111,8 @@ get_meta(Model, Key) ->
 -type monitors() :: #{reference() => {lee:key(), lee_metrics:metric()}}.
 
 -record(s,
-        { model :: lee:model()
+        { raw_model :: #{atom() => lee:lee_module()}
+        , cooked_model :: lee:model()
           %% Lee storage that holds the metrics:
         , metrics :: lee:data()
           %% Base data layers:
@@ -109,17 +122,33 @@ get_meta(Model, Key) ->
         }).
 -type s() :: #s{}.
 
-init([Model, BaseData]) ->
+init([BaseData]) ->
   process_flag(trap_exit, true),
+  RawModel = #{lee_metrics_vm => lee_metrics_vm:model()},
+  {ok, CookedModel} = cook_model(RawModel),
   Metrics = lee_storage:new(lee_metrics_storage),
-  S = #s{ model = Model
+  S = #s{ raw_model = RawModel
+        , cooked_model = CookedModel
         , metrics = Metrics
         , base_data = BaseData
         },
-  persistent_term:put(?MODEL, Model),
+  persistent_term:put(?MODEL, CookedModel),
   persistent_term:put(?METRICS, Metrics),
   {ok, S}.
 
+handle_call(#call_add_model{model_key = ModuleId, module = Module}, _From, S0) ->
+  #s{raw_model = Raw0} = S0,
+  Raw = Raw0#{ModuleId => Module},
+  case cook_model(Raw) of
+    {ok, CookedModel} ->
+      S = S0#s{ raw_model = Raw
+              , cooked_model = CookedModel
+              },
+      persistent_term:put(?MODEL, CookedModel),
+      {reply, ok, S};
+    Err ->
+      {reply, Err, S0}
+  end;
 handle_call(#call_register{key = Key, options = _Options, type = Type, metric = Metric}, _From, S0) ->
   maybe
     {ok, S} ?= try_append_metric(S0, Key, Type, Metric),
@@ -178,9 +207,9 @@ terminate(_Reason, _S = #s{metrics = {lee_tree, _, Data}}) ->
 %%================================================================================
 
 -doc false.
--spec start_link(lee:model(), lee:data()) -> {ok, pid()}.
-start_link(Model, Data) ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, [Model, Data], []).
+-spec start_link(lee:data()) -> {ok, pid()}.
+start_link(Data) ->
+  gen_server:start_link({local, ?SERVER}, ?MODULE, [Data], []).
 
 %%================================================================================
 %% Internal functions
@@ -189,7 +218,7 @@ start_link(Model, Data) ->
 -spec try_append_metric(s(), lee:key(), lee_metrics:type(), lee_metrics:metric()) ->
         {ok, s()} | {error, _}.
 try_append_metric(S0, Key, Type, Metric) ->
-  #s{ model = Model
+  #s{ cooked_model = Model
     , metrics = Metrics0
     , base_data = BaseData
     } = S0,
@@ -275,3 +304,14 @@ maybe_add_monitor(Options, Key, Metric, S = #s{monitors = Monitors}) ->
     _ ->
       S
   end.
+
+cook_model(Model) ->
+  lee_model:compile(
+    metamodel(),
+    maps:values(Model)).
+
+metamodel() ->
+  [ lee_metatype:create(lee_value)
+  , lee_metatype:create(lee_map)
+  , lee_metatype:create(lee_metrics_mt)
+  ].

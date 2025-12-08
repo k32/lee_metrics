@@ -50,7 +50,6 @@ model() ->
           #{ origin => [hist]
            }}
      },
-  External = lee_metrics_vm:model(),
   Mapped =
     #{mapped =>
         {[map],
@@ -69,18 +68,7 @@ model() ->
                 }}
           }}
      },
-  {ok, Cooked} =
-    lee_model:compile(
-      [ lee_metatype:create(lee_value)
-      , lee_metatype:create(lee_map)
-      , lee_metatype:create(lee_metrics_mt)
-      ],
-      [ Base
-      , Mapped
-      , External
-      , Derivatives
-      ]),
-  Cooked.
+  maps:merge(Base, maps:merge(Derivatives, Mapped)).
 
 sinks() ->
   [ #{ id => log
@@ -272,7 +260,11 @@ derivative_test_() ->
 
 setup(Body) ->
   {setup,
-   fun() -> {ok, Pid} = lee_metrics_sup:start_link(model()), Pid end,
+   fun() ->
+       {ok, Pid} = lee_metrics_sup:start_link(),
+       ok = lee_metrics_registry:add_model(?MODULE, model()),
+       Pid
+   end,
    fun(Pid) -> unlink(Pid), lee_metrics_sup:stop() end,
    Body}.
 

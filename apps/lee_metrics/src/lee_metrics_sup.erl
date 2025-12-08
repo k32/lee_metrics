@@ -3,7 +3,7 @@
 -behavior(supervisor).
 
 %% API:
--export([start_link/1, stop/0]).
+-export([start_link/0, stop/0]).
 
 %% behavior callbacks:
 -export([init/1]).
@@ -16,10 +16,10 @@
 
 -define(SUP, ?MODULE).
 
--spec start_link(lee:model()) ->
+-spec start_link() ->
         supervisor:startlink_ret().
-start_link(Model) ->
-  supervisor:start_link({local, ?SUP}, ?MODULE, {top, Model}).
+start_link() ->
+  supervisor:start_link({local, ?SUP}, ?MODULE, top).
 
 -spec stop() -> ok.
 stop() ->
@@ -39,8 +39,8 @@ stop() ->
 %% behavior callbacks
 %%================================================================================
 
-init({top, Model}) ->
-  Children = [ registry_spec(Model, [])
+init(top) ->
+  Children = [ registry_spec([])
              , derivatives_spec()
              ],
   SupFlags = #{ strategy      => rest_for_one
@@ -58,10 +58,10 @@ init({top, Model}) ->
 %% Internal functions
 %%================================================================================
 
--spec registry_spec(lee:model(), [lee:data()]) -> supervisor:child_spec().
-registry_spec(Model, BaseData) ->
+-spec registry_spec([lee:data()]) -> supervisor:child_spec().
+registry_spec(BaseData) ->
   #{ id          => registry
-   , start       => {lee_metrics_registry, start_link, [Model, BaseData]}
+   , start       => {lee_metrics_registry, start_link, [BaseData]}
    , shutdown    => 5_000
    , restart     => permanent
    , type        => worker

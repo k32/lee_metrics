@@ -28,6 +28,7 @@
 
 -define(SERVER, ?MODULE).
 
+-doc false.
 -spec start_link() -> {ok, pid()}.
 start_link() ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
@@ -47,6 +48,7 @@ start_link() ->
         , timer :: reference()
         }).
 
+-doc false.
 init(_) ->
   process_flag(trap_exit, true),
   S = #s{ timer = start_timer()
@@ -54,12 +56,15 @@ init(_) ->
   ets:new(?TAB, [set, protected, named_table, {keypos, 1}]),
   {ok, S}.
 
+-doc false.
 handle_call(_Call, _From, S) ->
   {reply, {error, unknown_call}, S}.
 
+-doc false.
 handle_cast(_Cast, S) ->
   {noreply, S}.
 
+-doc false.
 handle_info({timeout, TRef, collect}, S0 = #s{timer = TRef}) ->
   S = collect(S0),
   {noreply, S#s{timer = start_timer()}};
@@ -68,6 +73,7 @@ handle_info({'EXIT', _, shutdown}, S) ->
 handle_info(_Info, S) ->
   {noreply, S}.
 
+-doc false.
 terminate(_Reason, _S) ->
   ok.
 
@@ -75,6 +81,9 @@ terminate(_Reason, _S) ->
 %% Internal exports
 %%================================================================================
 
+-doc """
+Derive metadata of the metric based on the type of the origin metric.
+""".
 -spec derivative_meta(lee:model(), lee:model_key(), #mnode{}) -> {ok, #mnode{}} | {error, _}.
 derivative_meta(Model, MKeyDerived, DerivMeta) ->
   maybe
@@ -93,6 +102,9 @@ derivative_meta(Model, MKeyDerived, DerivMeta) ->
       Err
   end.
 
+-doc """
+Metric getter.
+""".
 -spec get_deltas(lee:model_key()) -> lee_metrics:metric_data().
 get_deltas(MKey) ->
   case ets:lookup(?TAB, MKey) of

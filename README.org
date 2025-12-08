@@ -1,0 +1,23 @@
+#+TITLE: Lee Metrics
+#+OPTIONS: ^:nil
+
+* Introduction
+
+=lee_metrics= is a modern lightweight metrics library for Erlang.
+
+It follows a schema-based approach where all metrics provided by the
+application are listed in the schema.
+
+Built-in metric types (such as counter and gauge) are very lightweight
+(having roughly the same overhead as =counter= and =atomics= modules
+from Erlang standard library) and are safe to use in hot loops.
+
+* Metric types
+
+- =counter_metric= - a scalar monotonically increasing counter implemented using =counters= module.
+- =external_counter_metric= - a scalar counter collected via callback.
+- =gauge_metric= - a scalar gauge implemented using =atomics= module.
+- =external_gauge_metric= - a scalar gauge collected via callback.
+- =histogram_metric= - histogram metric.
+- =external_histogram_metric=
+- =derivative_metric= - reports first derivative (rate) of a given metric.

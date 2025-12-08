@@ -39,9 +39,10 @@
 
 -type metric_value() ::
         non_neg_integer()                           % counter_metric
-      | integer()                                   % gauge
-      | float()                                     % gauge
-      | [{number() | infinity, number()}].          % histogram
+      | integer()                                   % gauge_metric
+      | [{number() | infinity, non_neg_integer()}]  % histogram_metric
+      | [{number() | infinity, number()}]           % external_histogram_metric
+      | number().                                   % external_gauge and counter metrics
 
 -type metric_data() :: [{lee:key(), metric_value()}].
 
@@ -64,10 +65,19 @@
 %% API functions
 %%================================================================================
 
+-doc """
+Remove metric from the global registry.
+
+Note: this function doesn't invalidate metric instances created
+by the business applications.
+""".
 -spec unregister_metric(lee:key(), metric()) -> ok.
 unregister_metric(Key, Metric) ->
   lee_metrics_registry:unregister(Key, Metric).
 
+-doc """
+Collect all metric instances identified by the model key.
+""".
 -spec collect(lee:model_key()) -> {ok, #mnode{}, metric_data()} | {error, _}.
 collect(MKey) ->
   Model = lee_metrics_registry:model(),
@@ -87,26 +97,44 @@ collect(MKey) ->
     end
   end.
 
+-doc """
+Create and register a new counter metric.
+""".
 -spec new_counter(lee:key(), options()) -> {ok, counter()} | {error, _}.
 new_counter(Key, Options) ->
   register_metric(counter_metric, Key, Options).
 
+-doc """
+Increment a counter.
+""".
 -spec incr(counter(), pos_integer()) -> ok.
 incr(Counter, Val) ->
   counters:add(Counter, 1, Val).
 
+-doc """
+Create and register a new gauge metric.
+""".
 -spec new_gauge(lee:key(), options()) -> {ok, gauge()} | {error, _}.
 new_gauge(Key, Options) ->
   register_metric(gauge_metric, Key, Options).
 
+-doc """
+Set value of gauge.
+""".
 -spec gauge_set(gauge(), integer()) -> ok.
 gauge_set(Ref, Value) ->
   atomics:put(Ref, 1, Value).
 
+-doc """
+Create a new histogram metric.
+""".
 -spec new_histogram(lee:key(), options()) -> {ok, histogram()} | {error, _}.
 new_histogram(Key, Options) ->
   register_metric(histogram_metric, Key, Options).
 
+-doc """
+Add a sample to the histogram.
+""".
 -spec histogram_observe(histogram(), number()) -> ok.
 histogram_observe(Histogram = #histogram{counters = Counters}, Val) ->
   Idx = hist_index(Val, Histogram),
