@@ -44,7 +44,7 @@ start_link() ->
         }).
 
 -record(s,
-        { dps = #{} :: #{lee:key() => #datapoint{}}
+        { rates = #{} :: #{lee:key() => #datapoint{}}
         , timer :: reference()
         }).
 
@@ -116,7 +116,7 @@ get_deltas(MKey) ->
 %% Internal functions
 %%================================================================================
 
-collect(S0 = #s{dps = OldDPs}) ->
+collect(S0 = #s{rates = OldDPs}) ->
   Model = lee_metrics_registry:model(),
   MKeys = lee_model:get_metatype_index(derivative_metric, Model),
   DPs = lists:foldl(
@@ -125,7 +125,7 @@ collect(S0 = #s{dps = OldDPs}) ->
           end,
           #{},
           MKeys),
-  S0#s{dps = DPs}.
+  S0#s{rates = DPs}.
 
 collect(Model, OldDPs, MKey, DPs0) ->
   maybe

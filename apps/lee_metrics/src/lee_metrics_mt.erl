@@ -83,9 +83,9 @@ metaparams(derivative_metric) ->
   ];
 metaparams(summary_metric) ->
   [ {optional, unit, binary()}
+  , {optional, n_buckets, pos_integer()}
   | lee_doc:documented()
   ].
-
 
 meta_validate_node(Type, Model, Key, MNode) ->
   Results0 = case Type of

@@ -61,7 +61,13 @@
 
 -opaque histogram() :: #histogram{}.
 
--opaque summary() :: counters:counters_ref().
+-record(summary,
+        { n_buckets :: pos_integer()
+        %% [Nsamples, SumBucket1, SumBucket2, ...]
+        , cref :: atomics:atomics_ref()
+        }).
+
+-opaque summary() :: #summary{}.
 
 -type metric() :: counter() | gauge().
 
@@ -155,9 +161,11 @@ new_summary(Key, Options) ->
 Add a sample to the summary.
 """.
 -spec summary_observe(summary(), number()) -> ok.
-summary_observe(Counters, Val) ->
-  counters:add(Counters, 1, 1),
-  counters:add(Counters, 2, Val).
+summary_observe(#summary{n_buckets = N, cref = Cref}, Val) ->
+  %% Spread sum over multiple counters to minimize chance of overflow:
+  Idx = os:perf_counter() rem N + 2,
+  atomics:add(Cref, 1, 1),
+  atomics:add(Cref, Idx, Val).
 
 %%================================================================================
 %% Internal exports
@@ -184,8 +192,12 @@ create_metric(gauge_metric, #mnode{metaparams = MPs}) ->
   {ok, atomics:new(1, [{signed, Signed}])};
 create_metric(histogram_metric, #mnode{metaparams = MPs}) ->
   create_histogram(MPs);
-create_metric(summary_metric, _) ->
-  {ok, counters:new(3, [])}.
+create_metric(summary_metric, MNode) ->
+  NBuckets = summary_n_buckets(MNode),
+  Summary = #summary{ n_buckets = NBuckets
+                    , cref = atomics:new(1 + NBuckets, [])
+                    },
+  {ok, Summary}.
 
 -spec get_meta(type(), lee:key()) -> {ok, #mnode{}} | {error, _}.
 get_meta(ExpectedType, Key) ->
@@ -240,13 +252,13 @@ collect_instance(histogram_metric, Data, #mnode{metaparams = #{buckets := Bucket
              {[], length(Buckets) + 1},
              [infinity | lists:reverse(Buckets)]),
   L;
-collect_instance(summary_metric, Data, _, Key) ->
+collect_instance(summary_metric, Data, _MNode, Key) ->
   Summaries = lee_metrics_registry:get_metrics(Data, Key),
-  WrapAround = 16#FFFFFFFFFFFFFFFF,
   lists:foldl(
-    fun(CRef, {N, Sum}) ->
-        { N + counters:get(CRef, 1)
-        , Sum + counters:get(CRef, 2) + (counters:get(CRef, 3) * WrapAround)
+    fun(#summary{n_buckets = NBuckets, cref = CRef}, {N, SumAcc}) ->
+        Sum = summary_get_sum(CRef, NBuckets),
+        { N + atomics:get(CRef, 1)
+        , SumAcc + Sum
         }
     end,
     {0, 0},
@@ -316,6 +328,17 @@ hist_index(Val, Buckets, MinIdx, MaxIdx) ->
      true ->
       hist_index(Val, Buckets, MinIdx, Mid)
   end.
+
+summary_n_buckets(#mnode{metaparams = MPs}) ->
+  maps:get(n_buckets, MPs, 32).
+
+summary_get_sum(CRef, NBuckets) ->
+  summary_get_sum(CRef, 2, NBuckets, 0).
+
+summary_get_sum(_CRef, I, NBuckets, Acc) when I > NBuckets ->
+  Acc;
+summary_get_sum(CRef, I, NBuckets, Acc) ->
+  summary_get_sum(CRef, I + 1, NBuckets, Acc + atomics:get(CRef, I)).
 
 -ifdef(TEST).
 
