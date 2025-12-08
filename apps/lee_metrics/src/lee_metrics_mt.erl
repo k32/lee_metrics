@@ -73,17 +73,21 @@ metaparams(histogram_metric) ->
   , {mandatory, buckets, nonempty_list(number())}
   | lee_doc:documented()
   ];
+metaparams(external_histogram_metric) ->
+  [ {mandatory, collect_callback, term()}
+  | metaparams(histogram_metric)
+  ];
 metaparams(derivative_metric) ->
   [ {mandatory, origin, lee:model_key()}
   | lee_doc:documented()
   ].
 
-meta_validate_node(Type, Model, _Key, MNode) ->
+meta_validate_node(Type, Model, Key, MNode) ->
   Results0 = case Type of
                histogram_metric ->
                  [hist_check_buckets(MNode)];
                derivative_metric ->
-                 [check_derivative(Model, MNode)];
+                 [check_derivative(Model, Key, MNode)];
                _ ->
                  []
              end,
@@ -114,8 +118,8 @@ do_check_buckets(Prev, L) ->
       do_check_buckets(Next, Rest)
   end.
 
-check_derivative(Model, MNode) ->
-  case lee_metrics_derivatives:derivative_meta(Model, MNode) of
+check_derivative(Model, Key, MNode) ->
+  case lee_metrics_derivatives:derivative_meta(Model, Key, MNode) of
     {ok, _} ->
       {[], []};
     Err ->

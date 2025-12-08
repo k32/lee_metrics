@@ -34,13 +34,14 @@
               | external_counter_metric
               | external_gauge_metric
               | histogram_metric
+              | external_histogram_metric
               | derivative_metric.
 
 -type metric_value() ::
         non_neg_integer()                           % counter_metric
       | integer()                                   % gauge
       | float()                                     % gauge
-      | [{number() | infinity, non_neg_integer()}]. % histogram
+      | [{number() | infinity, number()}].          % histogram
 
 -type metric_data() :: [{lee:key(), metric_value()}].
 
@@ -79,6 +80,8 @@ collect(MKey) ->
         Instances = lee:list(Model, Data, MKey),
         Values = [{I, collect_instance(Type, Data, MNode, I)} || I <- Instances],
         {ok, MNode, Values};
+      true when Type =:= derivative_metric ->
+        collect_derivative(Model, MKey, MNode);
       true ->
         {ok, MNode, collect_external(MKey, MNode)}
     end
@@ -208,12 +211,15 @@ collect_external(MKey, MNode) ->
   CB(MKey).
 -endif.
 
-is_external(external_counter_metric) ->
-  true;
-is_external(external_gauge_metric) ->
-  true;
-is_external(_) ->
-  false.
+collect_derivative(Model, MKey, MNodeDeriv) ->
+  {ok, MNode} = lee_metrics_derivatives:derivative_meta(Model, MKey, MNodeDeriv),
+  {ok, MNode, collect_external(MKey, MNode)}.
+
+is_external(external_counter_metric)   -> true;
+is_external(external_gauge_metric)     -> true;
+is_external(derivative_metric)         -> true;
+is_external(external_histogram_metric) -> true;
+is_external(_)                         -> false.
 
 %%--------------------------------------------------------------------------------
 %% Histograms

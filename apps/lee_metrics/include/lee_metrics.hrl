@@ -7,6 +7,7 @@
         , external_counter_metric
         , external_gauge_metric
         , histogram_metric
+        , external_histogram_metric
         , derivative_metric
         ]).
 

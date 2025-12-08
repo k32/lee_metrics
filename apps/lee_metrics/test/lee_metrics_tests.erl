@@ -6,6 +6,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("typerefl/include/types.hrl").
 
+-define(epsilon, 0.001).
+
 model() ->
   Base =
     #{ ctr =>
@@ -220,6 +222,53 @@ external_test_() ->
     , ?_assertMatch([_], collect([erlang, schedulers, dirty_io]))
     , ?_assertMatch([_], collect([erlang, schedulers, run_time]))
     ]).
+
+derivative_test_() ->
+  {timeout, 5_000,
+   setup(
+     ?_test(
+        begin
+          {ok, Ctr} = lee_metrics:new_counter([ctr], []),
+          {ok, Gauge} = lee_metrics:new_gauge([gauge1], []),
+          {ok, Hist} = lee_metrics:new_histogram([hist], []),
+          timer:sleep(1_100),
+          %% Increment metrics and gauges:
+          lee_metrics:incr(Ctr, 1),
+          lee_metrics:gauge_set(Gauge, 1),
+          lee_metrics:histogram_observe(Hist, 0),
+          lee_metrics:histogram_observe(Hist, 10),
+          %% Wait for the sample:
+          timer:sleep(1_000),
+          ?assertMatch(
+             [{_, N}] when abs(N - 1) < ?epsilon,
+             collect([dctr])),
+          ?assertMatch(
+             [{_, N}] when abs(N - 1) < ?epsilon,
+             collect([dgauge1])),
+          ?assertMatch(
+            [{_, [{10, N10}, {100, N100}, {1000, N1000}, {infinity, Ninf}]}] when
+                 abs(N10 - 1) < ?epsilon andalso
+                 abs(N100 - 1) < ?epsilon andalso
+                 abs(N1000) < ?epsilon andalso
+                 abs(Ninf) < ?epsilon,
+            collect([dhist])),
+          %% In the next sample derivatives should return to 0:
+          timer:sleep(1_100),
+          ?assertMatch(
+             [{_, N}] when abs(N) < ?epsilon,
+             collect([dctr])),
+          ?assertMatch(
+             [{_, N}] when abs(N) < ?epsilon,
+             collect([dgauge1])),
+          ?assertMatch(
+            [{_, [{10, N10}, {100, N100}, {1000, N1000}, {infinity, Ninf}]}] when
+                 abs(N10) < ?epsilon andalso
+                 abs(N100) < ?epsilon andalso
+                 abs(N1000) < ?epsilon andalso
+                 abs(Ninf) < ?epsilon,
+            collect([dhist]))
+        end
+       ))}.
 
 setup(Body) ->
   {setup,
