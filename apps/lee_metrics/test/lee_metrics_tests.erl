@@ -178,8 +178,10 @@ histogram_test_() ->
 
 external_test_() ->
   setup(
-    [ ?_assertMatch([_], collect([erlang, processes, reductions]))
-    , ?_assertMatch([_], collect([erlang, context_switches]))
+    [ ?_assertMatch([_], collect([erlang, processes, count]))
+    , ?_assertMatch([_], collect([erlang, processes, limit]))
+    , ?_assertMatch([_], collect([erlang, processes, reductions]))
+    , ?_assertMatch([_], collect([erlang, processes, context_switches]))
     , ?_assertMatch([_], collect([erlang, processes, gc, number]))
     , ?_assertMatch([_], collect([erlang, processes, gc, reclaimed]))
     , ?_test(
@@ -209,6 +211,7 @@ external_test_() ->
     , ?_assertMatch([_], collect([erlang, schedulers, dirty_cpu_online]))
     , ?_assertMatch([_], collect([erlang, schedulers, dirty_io]))
     , ?_assertMatch([_], collect([erlang, schedulers, run_time]))
+    , ?_assertMatch([_|_], collect([erlang, memory, allocated_areas, {}, size]))
     ]).
 
 derivative_test_() ->

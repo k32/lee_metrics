@@ -8,7 +8,21 @@
 model() ->
   #{erlang =>
       #{ processes =>
-           #{ reductions =>
+           #{ count =>
+                {[external_gauge_metric],
+                 #{ collect_callback =>
+                      fun(Key) ->
+                          [{Key, erlang:system_info(process_count)}]
+                      end
+                  }}
+            , limit =>
+                {[external_gauge_metric],
+                 #{ collect_callback =>
+                      fun(Key) ->
+                          [{Key, erlang:system_info(process_limit)}]
+                      end
+                  }}
+            , reductions =>
                 {[external_counter_metric],
                  #{ oneliner => "Total number of reductions for all processes"
                   , doc => """
@@ -21,7 +35,7 @@ model() ->
             , gc =>
                 #{ number =>
                      {[external_counter_metric],
-                      #{ oneliner => "Number of GCs"
+                      #{ oneliner => "Total number of GCs since the system start"
                        , collect_callback => fun gc_number/1
                        }}
                  , reclaimed =>
@@ -31,12 +45,12 @@ model() ->
                        , collect_callback => fun gc_reclaimed/1
                        }}
                  }
+            , context_switches =>
+                {[external_counter_metric],
+                 #{ oneliner => "Total number of Erlang process context switches since the system started"
+                  , collect_callback => fun context_switches/1
+                  }}
             }
-       , context_switches =>
-           {[external_counter_metric],
-            #{ oneliner => "Total number of context switches since the system started"
-             , collect_callback => fun context_switches/1
-             }}
        , ports =>
            #{ count =>
                 {[external_counter_metric],
@@ -161,6 +175,22 @@ model() ->
                   }}
 
             }
+       , memory =>
+           #{ allocated_areas =>
+                {[map],
+                 #{ oneliner => "Total memory allocated for various Erlang VM structures"
+                  , key_elements => [[area]]
+                  },
+                 #{ area =>
+                      {[value],
+                       #{ type => atom()
+                        }}
+                  , size =>
+                      {[external_gauge_metric],
+                       #{ collect_callback => fun allocated_areas/1
+                        }}
+                  }}
+            }
        }}.
 
 -spec reductions(lee:model_key()) -> lee_metrics:metric_data().
@@ -228,6 +258,17 @@ microstate_accounting(MKey) ->
           Cntrs)
     end,
     erlang:statistics(microstate_accounting)).
+
+allocated_areas(MKey) ->
+  lists:map(
+    fun(I) ->
+        case I of
+          {Area, Allocated} -> ok;
+          {Area, Allocated, _} -> ok
+        end,
+        {subst_key(MKey, [{Area}]), Allocated}
+    end,
+    erlang:system_info(allocated_areas)).
 
 subst_key(Key, []) ->
   Key;
